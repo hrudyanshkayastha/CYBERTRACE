@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYBERTRACE - Security Incident Detection & Investigation System</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-icon">CT</div>
+            <div>
+                <div class="brand-title">CYBERTRACE</div>
+                <div class="brand-sub">Incident Platform</div>
+            </div>
+        </div>
+
+        <ul class="nav-menu">
+            <li class="nav-item">
+                <a class="nav-link active" data-tab="dashboard">
+                    <span class="nav-icon">&#9783;</span> Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-tab="upload">
+                    <span class="nav-icon">&#8682;</span> Upload Logs
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-tab="events">
+                    <span class="nav-icon">&#9776;</span> Normalized Events
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-tab="incidents">
+                    <span class="nav-icon">&#9888;</span> Incidents
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-tab="iocs">
+                    <span class="nav-icon">&#9873;</span> IOC Findings
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-tab="timeline">
+                    <span class="nav-icon">&#8986;</span> Timeline
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-tab="risk">
+                    <span class="nav-icon">&#9733;</span> Risk Assessment
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-tab="reports">
+                    <span class="nav-icon">&#128196;</span> Reports
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-tab="about">
+                    <span class="nav-icon">&#128218;</span> About & Viva Guide
+                </a>
+            </li>
+        </ul>
+
+        <div class="sidebar-footer">
+            BSc Cybersecurity &bull; 3rd Year Project
+        </div>
+    </aside>
+
+    <!-- Main Content Layout -->
+    <div class="main-wrapper">
+        <!-- Top Sticky Header -->
+        <header class="topbar">
+            <div class="active-run-indicator">
+                <span class="status-dot"></span>
+                <span>Active Target: <strong id="active-run-target" style="color:var(--accent-cyan);">None</strong></span>
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-primary btn-sm" onclick="switchTab('upload')">+ Ingest Logs</button>
+            </div>
+        </header>
+
+        <!-- Dynamic Container Views -->
+        <main class="content-container">
+            <!-- Academic Disclaimer -->
+            <div class="disclaimer-banner">
+                <span>&#9888;</span>
+                <div>
+                    <strong>SOC Operational Notice:</strong> This system performs rule-based security event analysis. Detection results indicate potentially suspicious activity and do not prove malicious intent.
+                </div>
+            </div>
+
+            <!-- ================= VIEW 1: DASHBOARD ================= -->
+            <section id="view-dashboard" class="page-view active">
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-header">Total Events</div>
+                        <div class="stat-value" id="stat-total-events">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-header">Suspicious Events</div>
+                        <div class="stat-value warning" id="stat-suspicious-events">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-header">Total Incidents</div>
+                        <div class="stat-value accent" id="stat-total-incidents">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-header">Critical Incidents</div>
+                        <div class="stat-value critical" id="stat-critical-incidents">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-header">Unique Source IPs</div>
+                        <div class="stat-value" id="stat-unique-ips">0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-header">Observed IOCs</div>
+                        <div class="stat-value success" id="stat-observed-iocs">0</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">&#9888; Correlated Security Incidents (Overview)</span>
+                        <button class="btn btn-secondary btn-sm" onclick="switchTab('incidents')">View All Incidents</button>
+                    </div>
+                    <div class="card-body" id="dashboard-incidents-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 2: UPLOAD LOGS ================= -->
+            <section id="view-upload" class="page-view">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">&#8682; Ingest Security Logs</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13px; color:var(--text-muted); margin-bottom:16px;">
+                            Upload your server logs (.log, .txt, .csv, .json) or choose from the built-in synthetic test scenarios below.
+                        </p>
+
+                        <div id="log-dropzone" class="dropzone">
+                            <div class="dropzone-icon">&#128194;</div>
+                            <div style="font-weight:600; font-size:15px; margin-bottom:6px;">Drag and drop log file here</div>
+                            <div style="font-size:12px; color:var(--text-muted);">or click to browse from your computer (.log, .txt, .csv, .json)</div>
+                            <input type="file" id="file-input" style="display:none;" accept=".log,.txt,.csv,.json">
+                        </div>
+
+                        <h3 style="font-size:14px; margin-top:28px; margin-bottom:12px; color:var(--accent-blue);">
+                            Built-in Synthetic Demonstration Scenarios (1-Click Analysis):
+                        </h3>
+                        <div class="sample-grid" id="samples-container">
+                            <!-- Populated dynamically via /api/samples -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 3: NORMALIZED EVENTS ================= -->
+            <section id="view-events" class="page-view">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">&#9776; Normalized Security Events</span>
+                        <span id="events-count-label" style="font-size:12px; color:var(--text-muted);">0 events</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="filter-row">
+                            <input type="text" id="event-search-input" class="input-search" placeholder="Search message, IP, or user..." oninput="applyEventsFilter()">
+                            <select id="event-severity-select" class="select-filter" onchange="applyEventsFilter()">
+                                <option value="">All Severities</option>
+                                <option value="CRITICAL">Critical</option>
+                                <option value="HIGH">High</option>
+                                <option value="MEDIUM">Medium</option>
+                                <option value="LOW">Low</option>
+                            </select>
+                            <select id="event-type-select" class="select-filter" onchange="applyEventsFilter()">
+                                <option value="">All Event Types</option>
+                                <option value="LOGIN_FAILED">LOGIN_FAILED</option>
+                                <option value="LOGIN_SUCCESS">LOGIN_SUCCESS</option>
+                                <option value="ACCOUNT_LOCKED">ACCOUNT_LOCKED</option>
+                                <option value="PRIVILEGE_ESCALATION">PRIVILEGE_ESCALATION</option>
+                                <option value="NETWORK_CONNECTION">NETWORK_CONNECTION</option>
+                                <option value="PROCESS_EXECUTED">PROCESS_EXECUTED</option>
+                                <option value="FILE_CREATED">FILE_CREATED</option>
+                                <option value="LOGOUT">LOGOUT</option>
+                                <option value="OTHER">OTHER</option>
+                            </select>
+                        </div>
+
+                        <div class="table-wrapper">
+                            <table class="soc-table">
+                                <thead>
+                                    <tr>
+                                        <th>Timestamp</th>
+                                        <th>Event Type</th>
+                                        <th>Severity</th>
+                                        <th>Source IP</th>
+                                        <th>User</th>
+                                        <th>Normalized Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="events-tbody">
+                                    <tr><td colspan="6" style="text-align:center; padding:20px;">No events loaded.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 4: INCIDENTS ================= -->
+            <section id="view-incidents" class="page-view">
+                <div id="incidents-container">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </section>
+
+            <!-- ================= VIEW 5: IOC FINDINGS ================= -->
+            <section id="view-iocs" class="page-view">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">&#9873; Extracted Indicators of Compromise (IOCs)</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-wrapper">
+                            <table class="soc-table">
+                                <thead>
+                                    <tr>
+                                        <th>Type</th>
+                                        <th>Observed Value</th>
+                                        <th>Assessment</th>
+                                        <th>Context</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="iocs-tbody">
+                                    <tr><td colspan="5" style="text-align:center; padding:20px;">No IOCs recorded.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 6: TIMELINE ================= -->
+            <section id="view-timeline" class="page-view">
+                <div id="timeline-display">
+                    <!-- Chronological incident timeline cards populated by JS -->
+                </div>
+            </section>
+
+            <!-- ================= VIEW 7: RISK ASSESSMENT ================= -->
+            <section id="view-risk" class="page-view">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">&#9733; Transparent Risk Scoring Methodology</span>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:13.5px; color:var(--text-muted); line-height:1.6; margin-bottom:18px;">
+                            CYBERTRACE implements an explainable, deterministic scoring model. Unlike black-box machine learning models, every risk point addition is directly traced to a verified indicator:
+                        </p>
+
+                        <div class="table-wrapper" style="margin-bottom:24px;">
+                            <table class="soc-table">
+                                <thead>
+                                    <tr>
+                                        <th>Indicator / Event Category</th>
+                                        <th>Added Points</th>
+                                        <th>Security Rationale</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><strong>Failed login burst</strong></td>
+                                        <td><span class="badge badge-high">+20</span></td>
+                                        <td>High-frequency password guessing or brute-force behavior.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Successful login after failures</strong></td>
+                                        <td><span class="badge badge-high">+20</span></td>
+                                        <td>Indicates potential credential compromise following brute-force attempts.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Privilege escalation</strong></td>
+                                        <td><span class="badge badge-critical">+25</span></td>
+                                        <td>Elevation to root/administrator rights indicates severe lateral compromise.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Suspicious external connection</strong></td>
+                                        <td><span class="badge badge-high">+20</span></td>
+                                        <td>Outbound traffic to public IP addresses indicates potential C2 or data staging.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Account lockout</strong></td>
+                                        <td><span class="badge badge-medium">+10</span></td>
+                                        <td>Security threshold exceeded resulting in denial of authorized access.</td>
+                                    </tr>
+                                    <tr>
+                                        <td><strong>Multiple correlated indicators</strong></td>
+                                        <td><span class="badge badge-high">+15</span></td>
+                                        <td>Convergence of multiple distinct attack steps from identical source entity.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div style="background:var(--bg-sidebar); padding:16px; border-radius:8px; border:1px solid var(--border-color);">
+                            <h4 style="font-size:14px; margin-bottom:8px; color:var(--accent-blue);">Risk Score Categorization:</h4>
+                            <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:13px;">
+                                <div><span class="badge badge-low">0 – 29 LOW</span> Routine anomalies or minor baseline drift</div>
+                                <div><span class="badge badge-medium">30 – 59 MEDIUM</span> Moderately elevated suspicious signal</div>
+                                <div><span class="badge badge-high">60 – 79 HIGH</span> Multi-step attack chain identified</div>
+                                <div><span class="badge badge-critical">80 – 100 CRITICAL</span> Full compromise chain detected</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 8: REPORTS ================= -->
+            <section id="view-reports" class="page-view">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">&#128196; Security Incident Reports</span>
+                    </div>
+                    <div class="card-body">
+                        <div id="reports-active-banner">
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <h3 style="font-size:14px; margin-top:20px; margin-bottom:12px; color:var(--text-main);">
+                            Historical Analysis Runs:
+                        </h3>
+                        <div class="table-wrapper">
+                            <table class="soc-table">
+                                <thead>
+                                    <tr>
+                                        <th>Run ID</th>
+                                        <th>Filename</th>
+                                        <th>Uploaded At</th>
+                                        <th>Events</th>
+                                        <th>Incidents</th>
+                                        <th>Max Risk</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="runs-history-tbody">
+                                    <tr><td colspan="7" style="text-align:center; padding:16px;">No analysis history found.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ================= VIEW 9: ABOUT & VIVA GUIDE ================= -->
+            <section id="view-about" class="page-view">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">&#128218; Project Architecture & Beginner Viva Guide</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="margin-bottom:24px;">
+                            <h3 style="font-size:15px; margin-bottom:8px; color:var(--accent-blue);">System Pipeline:</h3>
+                            <div class="attack-chain-banner" style="color:#e2e8f0; font-size:12px;">
+                                LOG FILE &rarr; PARSER &rarr; NORMALIZATION &rarr; RULE ENGINE &rarr; CORRELATION &rarr; RISK SCORING &rarr; DASHBOARD &rarr; REPORT
+                            </div>
+                        </div>
+
+                        <h3 style="font-size:15px; margin-bottom:14px; color:var(--accent-cyan);">Essential Viva Questions & Answers:</h3>
+
+                        <div class="viva-card">
+                            <div class="viva-q">1. What is the fundamental difference between an Event and an Incident?</div>
+                            <div class="viva-a">
+                                An <strong>Event</strong> is any observable occurrence on a system (such as a single failed login or file creation). An <strong>Incident</strong> is an event or series of correlated events that adversely affects or threatens the security and confidentiality of a system.
+                            </div>
+                        </div>
+
+                        <div class="viva-card">
+                            <div class="viva-q">2. What is an Indicator of Compromise (IOC)?</div>
+                            <div class="viva-a">
+                                An <strong>IOC</strong> is a forensic artifact observed on a network or operating system that may indicate a security breach, such as an external IP address, malicious domain, unauthorized username, or staging file path.
+                            </div>
+                        </div>
+
+                        <div class="viva-card">
+                            <div class="viva-q">3. Why use deterministic rule-based detection instead of machine learning?</div>
+                            <div class="viva-a">
+                                Deterministic rules provide <strong>100% explainability</strong>. In a Security Operations Center and academic viva, an analyst must explain exactly why an alert triggered. Black-box ML models produce false positives and lack explainability.
+                            </div>
+                        </div>
+
+                        <div class="viva-card">
+                            <div class="viva-q">4. How does the Event Correlation engine work?</div>
+                            <div class="viva-a">
+                                The correlation engine groups events sharing the same <strong>Source IP</strong> or <strong>Username</strong> within a sliding time window, and tracks progression from initial access (brute-force) to compromise (success), elevation (sudo), and command communication.
+                            </div>
+                        </div>
+
+                        <div class="viva-card">
+                            <div class="viva-q">5. Does CYBERTRACE prove that an attack happened?</div>
+                            <div class="viva-a">
+                                No. CYBERTRACE identifies <strong>potential attack patterns</strong>. Definitively confirming an attack requires physical forensic verification and context, which is why defensive SOC wording is used.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal for Detailed Incident Investigation -->
+    <div id="incident-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="modal-incident-title" style="font-size:16px;">Incident Investigation</h3>
+                <button class="modal-close" onclick="closeIncidentModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-incident-body">
+                <!-- Injected by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

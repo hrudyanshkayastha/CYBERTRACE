@@ -1,0 +1,6 @@
+timestamp,source_ip,username,event_type,severity,message
+2026-10-01 14:00:01,192.168.1.99,guest,LOGIN_FAILED,LOW,Invalid credentials for guest
+2026-10-01 14:00:03,192.168.1.99,guest,LOGIN_FAILED,LOW,Invalid credentials for guest
+2026-10-01 14:00:05,192.168.1.99,guest,LOGIN_FAILED,LOW,Invalid credentials for guest
+2026-10-01 14:00:07,192.168.1.99,guest,LOGIN_FAILED,LOW,Invalid credentials for guest
+2026-10-01 14:00:09,192.168.1.99,guest,ACCOUNT_LOCKED,MEDIUM,Account locked after 4 failed attempts

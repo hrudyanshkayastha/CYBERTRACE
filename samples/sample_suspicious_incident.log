@@ -1,0 +1,8 @@
+2026-10-01 10:31:02 [WARN] [192.168.1.20] [admin] LOGIN_FAILED: Failed SSH login from 192.168.1.20 for user admin
+2026-10-01 10:31:05 [WARN] [192.168.1.20] [admin] LOGIN_FAILED: Failed SSH login from 192.168.1.20 for user admin
+2026-10-01 10:31:08 [WARN] [192.168.1.20] [admin] LOGIN_FAILED: Failed SSH login from 192.168.1.20 for user admin
+2026-10-01 10:31:10 [WARN] [192.168.1.20] [admin] LOGIN_FAILED: Failed SSH login from 192.168.1.20 for user admin
+2026-10-01 10:31:11 [INFO] [192.168.1.20] [admin] LOGIN_SUCCESS: Successful authentication for user admin following failures
+2026-10-01 10:31:15 [ERROR] [192.168.1.20] [admin] PRIVILEGE_ESCALATION: Unauthorized sudo privilege escalation executed by admin
+2026-10-01 10:31:20 [WARN] [192.168.1.20] [root] NETWORK_CONNECTION: Outbound connection established to external IP 203.0.113.50 domain suspicious-example.local
+2026-10-01 10:31:25 [WARN] [192.168.1.20] [root] FILE_CREATED: File artifact staged at /tmp/stage_payload.sh

@@ -1,0 +1,6 @@
+2026-10-01 08:30:10 [INFO] [192.168.1.10] [sarah] LOGIN_SUCCESS: User sarah authenticated via SSH key
+2026-10-01 08:30:15 [INFO] [192.168.1.10] [sarah] PROCESS_EXECUTED: User sarah spawned /bin/bash shell
+2026-10-01 08:35:22 [INFO] [192.168.1.10] [sarah] FILE_CREATED: Created deployment config /opt/app/config.yaml
+2026-10-01 08:45:00 [INFO] [192.168.1.10] [sarah] LOGOUT: User sarah closed session
+2026-10-01 09:00:12 [INFO] [192.168.1.15] [david] LOGIN_SUCCESS: Web portal session established
+2026-10-01 09:12:45 [INFO] [192.168.1.15] [david] LOGOUT: Web portal session terminated gracefully

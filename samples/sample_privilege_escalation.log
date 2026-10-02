@@ -1,0 +1,5 @@
+2026-10-01 11:20:00 [INFO] [192.168.1.55] [jordan] LOGIN_SUCCESS: Standard employee login for jordan
+2026-10-01 11:20:45 [WARN] [192.168.1.55] [jordan] PROCESS_EXECUTED: User executed /usr/bin/whoami
+2026-10-01 11:21:10 [ERROR] [192.168.1.55] [jordan] PRIVILEGE_ESCALATION: Unauthorized sudo su attempt executed by user jordan
+2026-10-01 11:21:15 [ERROR] [192.168.1.55] [root] PROCESS_EXECUTED: Elevated root bash shell spawned
+2026-10-01 11:21:30 [WARN] [192.168.1.55] [root] FILE_CREATED: Sensitive credential file accessed at /etc/shadow

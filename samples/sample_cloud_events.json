@@ -1,0 +1,29 @@
+[
+  {
+    "timestamp": "2026-10-01T16:00:00",
+    "source_ip": "198.51.100.88",
+    "username": "cloud_admin",
+    "event_type": "LOGIN_SUCCESS",
+    "message": "Console authentication success",
+    "severity": "LOW"
+  },
+  {
+    "timestamp": "2026-10-01T16:02:15",
+    "source_ip": "198.51.100.88",
+    "username": "cloud_admin",
+    "event_type": "PRIVILEGE_ESCALATION",
+    "message": "Assumed Administrator IAM role",
+    "severity": "HIGH"
+  },
+  {
+    "timestamp": "2026-10-01T16:05:30",
+    "source_ip": "198.51.100.88",
+    "username": "cloud_admin",
+    "event_type": "NETWORK_CONNECTION",
+    "message": "Outbound egress connection to 203.0.113.99 port 443",
+    "severity": "MEDIUM",
+    "extra_data": {
+      "destination_ip": "203.0.113.99"
+    }
+  }
+]

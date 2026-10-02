@@ -1,0 +1,6 @@
+INVALID_TIMESTAMP_LINE without standard format
+2026-99-99 99:99:99 [UNKNOWN] [999.999.999.999] [???] CORRUPT_EVENT
+Random unformatted garbage line ###@@@!!!
+2026-10-01 12:00:00 [INFO] [10.0.0.1] [testuser] LOGIN_SUCCESS: Valid event surrounded by corrupt data
+Broken JSON line: {"timestamp": "2026-10-01", "event_type": 
+2026-10-01 12:05:00 [-] [-] LOGOUT: User session closed
