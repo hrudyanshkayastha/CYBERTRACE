@@ -29,8 +29,10 @@ Logs → Parser → Detection → Correlation → IOC Extraction → Risk Engine
 ## Quick Start
 ```bash
 git clone https://github.com/hrudyanshkayastha/CYBERTRACE.git
-cd CYBERTRACE && python -m venv venv
-pip install -r requirements.txt && python run.py
+cd CYBERTRACE
+python -m venv venv
+pip install -r requirements.txt
+python run.py
 ```
 Dashboard: `http://127.0.0.1:8000`
 
