@@ -18,6 +18,17 @@ const state = {
     incidentsFilter: {
         severity: '',
         search: ''
+    },
+    timelineState: {
+        incidents: [],
+        activeIncidentId: null,
+        activeIncidentDetail: null,
+        activeFilter: 'ALL',
+        selectedEventIndex: 0
+    },
+    modalState: {
+        incident: null,
+        selectedEventIndex: 0
     }
 };
 
@@ -637,6 +648,124 @@ function renderIncidentsList(incidents, totalAvailable) {
     container.innerHTML = html;
 }
 
+// ================= Helper Functions for Forensic Telemetry =================
+function getIpClassification(ip) {
+    if (!ip || ip === '-' || ip === 'N/A') return null;
+    const cleanIp = String(ip).trim();
+    if (cleanIp.startsWith('127.') || cleanIp === '::1' || cleanIp.toLowerCase() === 'localhost') {
+        return { type: 'Loopback', isPrivate: true, badge: '<span class="badge badge-low" style="font-size:10px; margin-left:6px;">Loopback</span>' };
+    }
+    if (cleanIp.startsWith('10.') || cleanIp.startsWith('192.168.') || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(cleanIp)) {
+        return { type: 'Private RFC1918', isPrivate: true, badge: '<span class="badge badge-low" style="font-size:10px; margin-left:6px;">Internal Private</span>' };
+    }
+    return { type: 'Public / External', isPrivate: false, badge: '<span class="badge badge-critical" style="font-size:10px; margin-left:6px;">External Public</span>' };
+}
+
+function getEventClassification(ev) {
+    const sev = (ev.severity || 'LOW').toUpperCase();
+    const rules = (ev.extra_data && ev.extra_data.matched_rules) ? ev.extra_data.matched_rules : [];
+
+    if (rules.length > 0 || sev === 'CRITICAL') {
+        return {
+            category: 'Incident Trigger',
+            badgeClass: 'badge-critical',
+            isTrigger: true,
+            isSuspicious: true
+        };
+    }
+    if (sev === 'HIGH') {
+        return {
+            category: 'Suspicious Escalation',
+            badgeClass: 'badge-high',
+            isTrigger: false,
+            isSuspicious: true
+        };
+    }
+    if (sev === 'MEDIUM') {
+        return {
+            category: 'Anomalous Activity',
+            badgeClass: 'badge-medium',
+            isTrigger: false,
+            isSuspicious: true
+        };
+    }
+    return {
+        category: 'Normal Baseline',
+        badgeClass: 'badge-low',
+        isTrigger: false,
+        isSuspicious: false
+    };
+}
+
+function generateForensicAssessment(ev) {
+    const rules = (ev.extra_data && ev.extra_data.matched_rules) || [];
+    const evType = ev.event_type || '';
+    const sev = (ev.severity || 'LOW').toUpperCase();
+
+    if (rules.includes('RULE_001_BRUTE_FORCE')) {
+        return 'Deterministic rule <code>RULE_001_BRUTE_FORCE</code> triggered. Rapid sequential authentication failures detected from identical source entity exceeding brute-force thresholds.';
+    }
+    if (rules.includes('RULE_002_LOGIN_AFTER_FAILURES')) {
+        return 'Deterministic rule <code>RULE_002_LOGIN_AFTER_FAILURES</code> triggered. Successful authentication authenticated immediately following repeated failed attempts, indicating credential guessing success.';
+    }
+    if (rules.includes('RULE_003_ACCOUNT_LOCKOUT')) {
+        return 'Deterministic rule <code>RULE_003_ACCOUNT_LOCKOUT</code> triggered. Account locked out after repeated authentication failures.';
+    }
+    if (rules.includes('RULE_004_PRIVILEGE_ESCALATION')) {
+        return 'Deterministic rule <code>RULE_004_PRIVILEGE_ESCALATION</code> triggered. High-risk administrative elevation (sudo/root) executed by target user session.';
+    }
+    if (rules.includes('RULE_005_SUSPICIOUS_EXTERNAL_CONN')) {
+        return 'Deterministic rule <code>RULE_005_SUSPICIOUS_EXTERNAL_CONN</code> triggered. Outbound network telemetry detected connecting to an unverified external public IP address.';
+    }
+
+    if (evType === 'LOGIN_FAILED') {
+        return 'Authentication failure logged. Monitored for recurrence as part of credential stuffing / brute-force threshold detection.';
+    }
+    if (evType === 'LOGIN_SUCCESS') {
+        return 'Authorized session established. Correlated with preceding failure telemetry to detect unauthorized access.';
+    }
+    if (evType === 'NETWORK_CONNECTION') {
+        return 'Network socket connection event captured. Evaluated against RFC1918 address space and suspicious domain indicators.';
+    }
+    if (evType === 'PROCESS_EXECUTED' || evType === 'PRIVILEGE_ESCALATION') {
+        return 'Endpoint command execution recorded. Monitored for root privileges, credential dumping, or abnormal child processes.';
+    }
+    if (sev === 'HIGH' || sev === 'CRITICAL') {
+        return 'High-severity telemetry flagged for forensic investigation due to elevated threat risk profile.';
+    }
+    return 'Normal operational baseline event captured within log ingestion window.';
+}
+
+function generateAnalystRecommendation(ev) {
+    const rules = (ev.extra_data && ev.extra_data.matched_rules) || [];
+    const ipClass = getIpClassification(ev.source_ip);
+
+    if (rules.includes('RULE_004_PRIVILEGE_ESCALATION')) {
+        return 'Verify administrative authorization for user session. If unauthorized, revoke sudo rights and isolate endpoint immediately.';
+    }
+    if (rules.includes('RULE_005_SUSPICIOUS_EXTERNAL_CONN') || (ipClass && !ipClass.isPrivate)) {
+        return 'Block external destination IP on perimeter firewall and inspect active socket connections on affected host.';
+    }
+    if (rules.includes('RULE_002_LOGIN_AFTER_FAILURES') || rules.includes('RULE_001_BRUTE_FORCE')) {
+        return 'Initiate credential reset for affected account. Invalidate active session tokens and enforce multi-factor authentication (MFA).';
+    }
+    if (rules.includes('RULE_003_ACCOUNT_LOCKOUT')) {
+        return 'Maintain account lockout. Contact legitimate account owner to verify whether activity was user-initiated.';
+    }
+    return 'Maintain baseline logging retention and correlate with adjacent network telemetry.';
+}
+
+function copyRawLogPayload(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const text = el.innerText || el.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Raw evidence log copied to clipboard', 'success');
+    }).catch(() => {
+        showToast('Failed to copy to clipboard', 'error');
+    });
+}
+
 // ================= 5. Incident Details Modal =================
 async function openIncidentModal(incidentId) {
     try {
@@ -644,23 +773,39 @@ async function openIncidentModal(incidentId) {
         const inc = await res.json();
         if (!res.ok) throw new Error(inc.detail || 'Incident not found');
 
+        state.modalState = {
+            incident: inc,
+            selectedEventIndex: 0
+        };
+
         document.getElementById('modal-incident-title').textContent = `${inc.incident_code}: ${inc.title}`;
         
         const sevClass = inc.risk_level.toLowerCase();
-        let factorsHtml = (inc.contributing_factors || []).map(f => `<li><code>${f}</code></li>`).join('');
-        let recsHtml = (inc.recommendations || []).map(r => `<li>${r}</li>`).join('');
-        let rulesHtml = (inc.rules_triggered || []).map(r => `<span class="badge badge-tag">${r}</span>`).join(' ');
+        let factorsHtml = (inc.contributing_factors || []).map(f => `<li><code>${escapeHtml(f)}</code></li>`).join('');
+        let recsHtml = (inc.recommendations || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
+        let rulesHtml = (inc.rules_triggered || []).map(r => `<span class="badge badge-tag">${escapeHtml(r)}</span>`).join(' ');
 
         // Timeline table rows
+        const timelineList = inc.timeline || [];
         let timelineRows = '';
-        (inc.timeline || []).forEach(ev => {
+        timelineList.forEach((ev, idx) => {
+            const isSelected = idx === 0;
+            const cls = getEventClassification(ev);
+            const rules = (ev.extra_data && ev.extra_data.matched_rules) || [];
+            const ruleBadges = rules.map(r => `<span class="badge badge-tag" style="font-size:10px;">${escapeHtml(r)}</span>`).join(' ');
+
             timelineRows += `
-                <tr>
-                    <td style="white-space:nowrap;"><code style="white-space:nowrap;">${ev.timestamp || 'N/A'}</code></td>
-                    <td style="white-space:nowrap;"><span class="badge badge-tag">${ev.event_type}</span></td>
-                    <td style="white-space:nowrap;"><code>${ev.source_ip || '-'}</code></td>
-                    <td style="white-space:nowrap;"><code>${ev.username || '-'}</code></td>
-                    <td style="word-break:break-word;">${escapeHtml(ev.message)}</td>
+                <tr class="selectable-row ${isSelected ? 'selected-row' : ''}" id="modal-row-${idx}" onclick="selectModalTimelineRow(${idx})">
+                    <td style="white-space:nowrap; width:35px; text-align:center;"><span class="timeline-step-badge">#${idx + 1}</span></td>
+                    <td style="white-space:nowrap;"><code style="white-space:nowrap;">${escapeHtml(ev.timestamp || 'N/A')}</code></td>
+                    <td style="white-space:nowrap;"><span class="badge badge-tag">${escapeHtml(ev.event_type)}</span></td>
+                    <td style="white-space:nowrap;"><span class="badge ${cls.badgeClass}">${cls.category}</span></td>
+                    <td style="white-space:nowrap;"><code>${escapeHtml(ev.source_ip || '-')}</code></td>
+                    <td style="white-space:nowrap;"><code>${escapeHtml(ev.username || '-')}</code></td>
+                    <td style="word-break:break-word;">
+                        ${escapeHtml(ev.message)}
+                        ${ruleBadges ? `<div style="margin-top:4px;">${ruleBadges}</div>` : ''}
+                    </td>
                 </tr>
             `;
         });
@@ -668,10 +813,10 @@ async function openIncidentModal(incidentId) {
         const modalContent = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                 <div>
-                    <span class="badge badge-tag">${inc.incident_type}</span>
-                    <span style="margin-left:10px; font-size:13px; color:var(--text-muted);">Observed: ${inc.first_observed || 'N/A'} to ${inc.last_observed || 'N/A'}</span>
+                    <span class="badge badge-tag">${escapeHtml(inc.incident_type)}</span>
+                    <span style="margin-left:10px; font-size:13px; color:var(--text-muted);">Observed: ${escapeHtml(inc.first_observed || 'N/A')} to ${escapeHtml(inc.last_observed || 'N/A')}</span>
                 </div>
-                <span class="badge badge-${sevClass}" style="font-size:13px; padding:6px 14px;">Risk: ${inc.risk_level} (${inc.risk_score}/100)</span>
+                <span class="badge badge-${sevClass}" style="font-size:13px; padding:6px 14px;">Risk: ${escapeHtml(inc.risk_level)} (${inc.risk_score}/100)</span>
             </div>
 
             <div style="background:var(--bg-sidebar); padding:14px; border-radius:8px; border:1px solid var(--border-color); margin-bottom:18px;">
@@ -699,30 +844,137 @@ async function openIncidentModal(incidentId) {
                 <div>${rulesHtml || '<em>None</em>'}</div>
             </div>
 
-            <div>
-                <h4 style="font-size:13px; margin-bottom:8px;">Chronological Incident Timeline (${(inc.timeline || []).length} events):</h4>
+            <div style="margin-bottom:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <h4 style="font-size:13px; margin:0;">Chronological Incident Timeline (${timelineList.length} events):</h4>
+                    <span style="font-size:11.5px; color:var(--text-dim);">&#128073; Click any row to inspect raw forensic evidence</span>
+                </div>
                 <div class="table-wrapper">
                     <table class="soc-table">
                         <thead>
                             <tr>
-                                <th style="white-space:nowrap; width:170px;">Timestamp</th>
-                                <th style="white-space:nowrap; width:160px;">Event Type</th>
-                                <th style="white-space:nowrap; width:130px;">Source IP</th>
-                                <th style="white-space:nowrap; width:100px;">User</th>
-                                <th>Message</th>
+                                <th style="width:35px; text-align:center;">#</th>
+                                <th style="white-space:nowrap; width:150px;">Timestamp</th>
+                                <th style="white-space:nowrap; width:140px;">Event Type</th>
+                                <th style="white-space:nowrap; width:120px;">Classification</th>
+                                <th style="white-space:nowrap; width:120px;">Source IP</th>
+                                <th style="white-space:nowrap; width:90px;">User</th>
+                                <th>Evidence Summary</th>
                             </tr>
                         </thead>
-                        <tbody>${timelineRows || '<tr><td colspan="5">No timeline events available.</td></tr>'}</tbody>
+                        <tbody>${timelineRows || '<tr><td colspan="7">No timeline events available.</td></tr>'}</tbody>
                     </table>
                 </div>
+            </div>
+
+            <div id="modal-evidence-inspector-container">
+                <!-- Rendered by renderModalEvidenceInspector -->
             </div>
         `;
 
         document.getElementById('modal-incident-body').innerHTML = modalContent;
+        if (timelineList.length > 0) {
+            renderModalEvidenceInspector(timelineList[0], 0);
+        }
         document.getElementById('incident-modal').classList.add('active');
     } catch (err) {
         showToast(err.message, 'error');
     }
+}
+
+function selectModalTimelineRow(idx) {
+    const inc = state.modalState ? state.modalState.incident : null;
+    if (!inc || !inc.timeline || !inc.timeline[idx]) return;
+
+    state.modalState.selectedEventIndex = idx;
+
+    // Update row highlight
+    document.querySelectorAll('#modal-incident-body .selectable-row').forEach(row => {
+        row.classList.remove('selected-row');
+    });
+    const targetRow = document.getElementById(`modal-row-${idx}`);
+    if (targetRow) targetRow.classList.add('selected-row');
+
+    renderModalEvidenceInspector(inc.timeline[idx], idx);
+}
+
+function renderModalEvidenceInspector(ev, idx) {
+    const container = document.getElementById('modal-evidence-inspector-container');
+    if (!container) return;
+    if (!ev) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const inc = state.modalState ? state.modalState.incident : null;
+    const total = inc && inc.timeline ? inc.timeline.length : 1;
+    const cls = getEventClassification(ev);
+    const ipClass = getIpClassification(ev.source_ip);
+    const rules = (ev.extra_data && ev.extra_data.matched_rules) || [];
+    const rulesHtml = rules.map(r => `<span class="badge badge-tag">${escapeHtml(r)}</span>`).join(' ');
+    const assessment = generateForensicAssessment(ev);
+    const recAction = generateAnalystRecommendation(ev);
+
+    container.innerHTML = `
+        <div class="timeline-inspector-card" style="margin-top:16px;">
+            <div class="card-header" style="background:var(--bg-card-header); padding:10px 16px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <strong style="font-size:13px; color:var(--text-main);">&#128269; Selected Event Evidence (Step #${idx + 1} of ${total})</strong>
+                </div>
+                <span class="badge ${cls.badgeClass}">${cls.category}</span>
+            </div>
+            <div style="padding:14px;">
+                <div class="inspector-meta-grid" style="margin-bottom:12px;">
+                    <div>
+                        <span style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">Source IP</span>
+                        <div style="font-family:monospace; font-size:12px; margin-top:2px;">
+                            <code>${escapeHtml(ev.source_ip || 'N/A')}</code>
+                            ${ipClass ? ipClass.badge : ''}
+                        </div>
+                    </div>
+                    <div>
+                        <span style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">User / Account</span>
+                        <div style="font-family:monospace; font-size:12px; margin-top:2px;">
+                            <code>${escapeHtml(ev.username || 'N/A')}</code>
+                        </div>
+                    </div>
+                    <div>
+                        <span style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">Event Timestamp</span>
+                        <div style="font-family:monospace; font-size:12px; margin-top:2px; color:var(--text-dim);">
+                            ${escapeHtml(ev.timestamp || 'Time unavailable')}
+                        </div>
+                    </div>
+                    <div>
+                        <span style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">Detection Rule Match</span>
+                        <div style="margin-top:2px;">
+                            ${rulesHtml || '<span style="font-size:11.5px; color:var(--text-muted);">None (Normal Baseline)</span>'}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:12px;">
+                    <span style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px;">Forensic Assessment:</span>
+                    <div style="font-size:12.5px; color:#e2e8f0; background:rgba(2,132,199,0.08); border-left:3px solid var(--accent-cyan); padding:8px 12px; border-radius:4px; margin-top:4px;">
+                        ${assessment}
+                    </div>
+                </div>
+
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <span style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px;">Raw Evidence Log:</span>
+                        <button class="btn btn-secondary btn-sm" onclick="copyRawLogPayload('modal-raw-log-${idx}')">&#128203; Copy Raw Log</button>
+                    </div>
+                    <div class="raw-log-container" style="margin-top:2px; margin-bottom:8px;">
+                        <pre id="modal-raw-log-${idx}" class="raw-log-text">${escapeHtml(ev.raw_log || ev.message || 'No raw log line captured.')}</pre>
+                    </div>
+                </div>
+
+                <div style="border-top:1px solid rgba(255,255,255,0.06); padding-top:8px; margin-top:8px; font-size:12px; color:var(--text-muted);">
+                    <strong style="color:var(--accent-cyan);">SOC Action:</strong> ${recAction}
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 function closeIncidentModal() {
@@ -776,65 +1028,366 @@ function copyText(text) {
     });
 }
 
-// ================= 7. Timeline View =================
+// ================= 7. Interactive Attack Timeline View =================
 async function loadTimeline() {
+    const container = document.getElementById('timeline-display');
+    if (!container) return;
+
     if (!state.currentRunId) {
-        document.getElementById('timeline-display').innerHTML = '<p style="padding:20px; color:var(--text-muted);">No analysis run selected.</p>';
+        container.innerHTML = `
+            <div class="card" style="padding:32px; text-align:center; color:var(--text-muted);">
+                <h3>No Analysis Run Active</h3>
+                <p style="margin-top:6px; font-size:13px;">Please ingest a log file or analyze a synthetic scenario from the Upload tab to view attack progression timelines.</p>
+            </div>
+        `;
         return;
     }
 
     try {
         const res = await fetch(`/api/incidents?run_id=${state.currentRunId}`);
         const incidents = await res.json();
-        const container = document.getElementById('timeline-display');
 
         if (!incidents || incidents.length === 0) {
-            container.innerHTML = '<p style="padding:20px; color:var(--text-muted);">No correlated incident timelines available.</p>';
+            container.innerHTML = `
+                <div class="card" style="padding:36px; text-align:center; color:var(--text-muted);">
+                    <div style="font-size:36px; margin-bottom:8px;">&#10004;</div>
+                    <h3 style="color:#34d399; margin-bottom:6px;">No Correlated Attack Timelines</h3>
+                    <p style="font-size:13.5px; max-width:550px; margin:0 auto;">
+                        The events in this log run did not trigger any correlated attack chains or rule thresholds. System baseline remains healthy.
+                    </p>
+                </div>
+            `;
             return;
         }
 
-        let html = '';
-        for (const inc of incidents) {
-            const fullRes = await fetch(`/api/incidents/${inc.id}`);
-            const fullInc = await fullRes.json();
-            const sevClass = fullInc.risk_level.toLowerCase();
+        state.timelineState = state.timelineState || {};
+        state.timelineState.incidents = incidents;
 
-            let itemsHtml = '';
-            (fullInc.timeline || []).forEach(ev => {
-                const bulletClass = ev.severity ? ev.severity.toLowerCase() : 'low';
-                itemsHtml += `
-                    <div class="timeline-item">
-                        <div class="timeline-bullet ${bulletClass}"></div>
-                        <div class="timeline-content">
-                            <div class="timeline-time">${ev.timestamp || 'Time unavailable'}</div>
-                            <div class="timeline-title">${ev.event_type} &bull; <span style="font-weight:normal; color:var(--text-muted);">${ev.source_ip || 'No IP'}</span></div>
-                            <div style="font-size:12.5px; color:var(--text-main);">${escapeHtml(ev.message)}</div>
-                        </div>
-                    </div>
-                `;
-            });
+        // Select active incident
+        const currentActiveId = state.timelineState.activeIncidentId;
+        const exists = incidents.some(inc => inc.id === currentActiveId);
+        if (!exists) {
+            state.timelineState.activeIncidentId = incidents[0].id;
+            state.timelineState.selectedEventIndex = 0;
+            state.timelineState.activeFilter = 'ALL';
+        }
 
-            html += `
-                <div class="card" style="margin-bottom:24px;">
-                    <div class="card-header">
-                        <span class="card-title">${fullInc.incident_code}: ${escapeHtml(fullInc.title)}</span>
-                        <span class="badge badge-${sevClass}">${fullInc.risk_level} (${fullInc.risk_score}/100)</span>
+        await renderActiveTimelineView();
+    } catch (err) {
+        console.error('Error loading attack timeline:', err);
+        container.innerHTML = `
+            <div class="card" style="padding:24px; text-align:center; color:#ef4444;">
+                <p>Failed to load attack timeline: ${escapeHtml(err.message)}</p>
+            </div>
+        `;
+    }
+}
+
+async function selectTimelineIncident(incidentId) {
+    if (!state.timelineState) return;
+    state.timelineState.activeIncidentId = incidentId;
+    state.timelineState.selectedEventIndex = 0;
+    state.timelineState.activeFilter = 'ALL';
+    await renderActiveTimelineView();
+}
+
+async function renderActiveTimelineView() {
+    const container = document.getElementById('timeline-display');
+    if (!container || !state.timelineState) return;
+
+    const incidents = state.timelineState.incidents || [];
+    const activeId = state.timelineState.activeIncidentId;
+
+    // Fetch full incident details with timeline events
+    const incRes = await fetch(`/api/incidents/${activeId}`);
+    const activeInc = await incRes.json();
+    if (!incRes.ok) throw new Error(activeInc.detail || 'Incident details unavailable');
+
+    state.timelineState.activeIncidentDetail = activeInc;
+    const events = activeInc.timeline || [];
+
+    // 1. Incident Selector (if multiple incidents or tab header)
+    let selectorHtml = '';
+    if (incidents.length > 1) {
+        selectorHtml = `
+            <div class="timeline-incident-selector">
+                ${incidents.map(inc => {
+                    const isActive = inc.id === activeId;
+                    const sev = (inc.risk_level || 'LOW').toLowerCase();
+                    return `
+                        <button class="timeline-incident-tab ${isActive ? 'active' : ''}" onclick="selectTimelineIncident(${inc.id})">
+                            <span class="badge badge-${sev}">${inc.risk_level}</span>
+                            <span>${escapeHtml(inc.incident_code)}: ${escapeHtml(inc.title)}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    // 2. Correlation Ribbon & Stages
+    const sevClass = (activeInc.risk_level || 'LOW').toLowerCase();
+    const rawPattern = activeInc.attack_pattern || 'Initial Telemetry';
+    const patternSteps = rawPattern.split(/->|→|&rarr;/).map(s => s.trim()).filter(Boolean);
+
+    let stagesHtml = '';
+    patternSteps.forEach((step, idx) => {
+        stagesHtml += `<div class="stage-node"><span style="color:#38bdf8;">Stage ${idx + 1}:</span> ${escapeHtml(step)}</div>`;
+        if (idx < patternSteps.length - 1) {
+            stagesHtml += `<span class="stage-arrow">&rarr;</span>`;
+        }
+    });
+
+    const factors = activeInc.contributing_factors || [];
+    const factorsHtml = factors.map(f => `
+        <span class="badge badge-tag" style="background:rgba(251,191,36,0.1); border-color:rgba(251,191,36,0.3); color:#fbbf24;">
+            ${escapeHtml(f)}
+        </span>
+    `).join(' ');
+
+    const ribbonHtml = `
+        <div class="correlation-ribbon">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap;">
+                <div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="badge badge-tag" style="font-size:12px;">${escapeHtml(activeInc.incident_code)}</span>
+                        <h3 style="font-size:16px; margin:0; color:#fff;">${escapeHtml(activeInc.title)}</h3>
                     </div>
-                    <div class="card-body">
-                        <div class="attack-chain-banner" style="margin-bottom:20px;">
-                            ${escapeHtml(fullInc.attack_pattern)}
+                    <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">
+                        Target Entity: Source IP <code>${escapeHtml(activeInc.source_ip || 'N/A')}</code> &bull;
+                        User Account <code>${escapeHtml(activeInc.username || 'N/A')}</code> &bull;
+                        Observation Window: <code>${escapeHtml(activeInc.first_observed || 'N/A')}</code> to <code>${escapeHtml(activeInc.last_observed || 'N/A')}</code>
+                    </div>
+                </div>
+                <div>
+                    <span class="badge badge-${sevClass}" style="font-size:13px; padding:6px 14px;">
+                        Risk: ${escapeHtml(activeInc.risk_level)} (${activeInc.risk_score}/100)
+                    </span>
+                </div>
+            </div>
+
+            <div style="margin-top:14px; border-top:1px solid rgba(255,255,255,0.06); padding-top:12px;">
+                <span style="font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-dim); font-weight:700;">Correlated Attack Pattern Progression:</span>
+                <div class="correlation-stages">
+                    ${stagesHtml || '<div class="stage-node">Single Stage Telemetry</div>'}
+                </div>
+            </div>
+
+            <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="font-size:11px; color:#fbbf24; font-weight:700; text-transform:uppercase;">Contributing Risk Factors:</span>
+                    ${factorsHtml || '<span style="font-size:12px; color:var(--text-muted);">Standard Baseline</span>'}
+                </div>
+                <div style="font-size:11.5px; color:var(--text-dim);">
+                    <span style="color:var(--accent-cyan); font-weight:600;">Correlation Basis:</span> Deterministic entity grouping &bull; ${events.length} chronological events
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 3. Split Workspace: Left Stream + Right Inspector
+    const currentFilter = state.timelineState.activeFilter || 'ALL';
+    const triggersCount = events.filter(e => {
+        const cls = getEventClassification(e);
+        return cls.isTrigger;
+    }).length;
+    const suspiciousCount = events.filter(e => {
+        const cls = getEventClassification(e);
+        return cls.isSuspicious;
+    }).length;
+
+    // Filter events
+    let visibleEvents = [];
+    events.forEach((ev, originalIndex) => {
+        const cls = getEventClassification(ev);
+        let match = false;
+        if (currentFilter === 'ALL') match = true;
+        else if (currentFilter === 'TRIGGERS' && cls.isTrigger) match = true;
+        else if (currentFilter === 'SUSPICIOUS' && cls.isSuspicious) match = true;
+
+        if (match) {
+            visibleEvents.push({ event: ev, index: originalIndex });
+        }
+    });
+
+    // Determine selected index
+    let selIdx = state.timelineState.selectedEventIndex || 0;
+    if (visibleEvents.length > 0 && !visibleEvents.some(v => v.index === selIdx)) {
+        selIdx = visibleEvents[0].index;
+        state.timelineState.selectedEventIndex = selIdx;
+    }
+
+    // Render Stream Event Cards
+    let streamCardsHtml = '';
+    if (visibleEvents.length === 0) {
+        streamCardsHtml = `<div style="text-align:center; padding:30px; color:var(--text-muted);">No events match the selected filter.</div>`;
+    } else {
+        visibleEvents.forEach(({ event: ev, index: origIdx }) => {
+            const isSelected = origIdx === selIdx;
+            const cls = getEventClassification(ev);
+            const rules = (ev.extra_data && ev.extra_data.matched_rules) || [];
+            const rulesTagHtml = rules.map(r => `<span class="badge badge-tag" style="font-size:10px;">${escapeHtml(r)}</span>`).join(' ');
+
+            streamCardsHtml += `
+                <div class="timeline-event-card ${isSelected ? 'selected' : ''}" id="timeline-card-${origIdx}" onclick="selectTimelineStreamEvent(${origIdx})">
+                    <div class="timeline-event-header">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span class="timeline-step-badge">#${origIdx + 1}</span>
+                            <span class="badge ${cls.badgeClass}">${cls.category}</span>
                         </div>
-                        <div class="timeline-container">
-                            ${itemsHtml}
+                        <span class="timeline-event-time">${escapeHtml(ev.timestamp || 'N/A')}</span>
+                    </div>
+                    <div class="timeline-event-body">
+                        <strong style="color:var(--accent-cyan); font-size:12.5px;">${escapeHtml(ev.event_type || 'EVENT')}</strong>
+                        <div style="color:var(--text-main); font-size:12px; margin-top:2px;">${escapeHtml(ev.message || '')}</div>
+                    </div>
+                    <div class="timeline-event-footer">
+                        <div>
+                            <span>IP: <code>${escapeHtml(ev.source_ip || '-')}</code></span>
+                            <span style="margin: 0 4px;">&bull;</span>
+                            <span>User: <code>${escapeHtml(ev.username || '-')}</code></span>
                         </div>
+                        <div>${rulesTagHtml}</div>
                     </div>
                 </div>
             `;
-        }
-        container.innerHTML = html;
-    } catch (err) {
-        console.error('Error loading timeline:', err);
+        });
     }
+
+    const layoutHtml = `
+        <div class="timeline-layout">
+            <!-- Left Stream -->
+            <div class="timeline-stream-card">
+                <div class="timeline-filter-bar">
+                    <button class="timeline-filter-btn ${currentFilter === 'ALL' ? 'active' : ''}" onclick="setTimelineFilter('ALL')">
+                        All Events (${events.length})
+                    </button>
+                    <button class="timeline-filter-btn ${currentFilter === 'TRIGGERS' ? 'active' : ''}" onclick="setTimelineFilter('TRIGGERS')">
+                        Detection Triggers (${triggersCount})
+                    </button>
+                    <button class="timeline-filter-btn ${currentFilter === 'SUSPICIOUS' ? 'active' : ''}" onclick="setTimelineFilter('SUSPICIOUS')">
+                        Suspicious / Anomalies (${suspiciousCount})
+                    </button>
+                </div>
+                <div class="timeline-stream" id="timeline-stream-container">
+                    ${streamCardsHtml}
+                </div>
+            </div>
+
+            <!-- Right Inspector -->
+            <div class="timeline-inspector-card timeline-inspector-pane" id="timeline-inspector-container">
+                <!-- Injected by renderTimelineInspector -->
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = selectorHtml + ribbonHtml + layoutHtml;
+
+    // Render inspector for selected event
+    if (events[selIdx]) {
+        renderTimelineInspector(events[selIdx], selIdx, events.length);
+    }
+}
+
+function setTimelineFilter(filterType) {
+    if (!state.timelineState) return;
+    state.timelineState.activeFilter = filterType;
+    renderActiveTimelineView();
+}
+
+function selectTimelineStreamEvent(idx) {
+    if (!state.timelineState || !state.timelineState.activeIncidentDetail) return;
+    state.timelineState.selectedEventIndex = idx;
+
+    // Update active card styling
+    document.querySelectorAll('.timeline-event-card').forEach(card => card.classList.remove('selected'));
+    const targetCard = document.getElementById(`timeline-card-${idx}`);
+    if (targetCard) targetCard.classList.add('selected');
+
+    const events = state.timelineState.activeIncidentDetail.timeline || [];
+    if (events[idx]) {
+        renderTimelineInspector(events[idx], idx, events.length);
+    }
+}
+
+function renderTimelineInspector(ev, idx, total) {
+    const container = document.getElementById('timeline-inspector-container');
+    if (!container || !ev) return;
+
+    const cls = getEventClassification(ev);
+    const ipClass = getIpClassification(ev.source_ip);
+    const rules = (ev.extra_data && ev.extra_data.matched_rules) || [];
+    const matchedRulesHtml = rules.map(r => `<span class="badge badge-tag">${escapeHtml(r)}</span>`).join(' ');
+    const assessment = generateForensicAssessment(ev);
+    const action = generateAnalystRecommendation(ev);
+
+    container.innerHTML = `
+        <div class="card-header" style="background:var(--bg-card-header); padding:12px 16px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <strong style="font-size:13px; color:var(--text-main);">&#128269; Forensic Evidence Inspector</strong>
+                <span style="font-size:11.5px; color:var(--text-muted); margin-left:8px;">Event #${idx + 1} of ${total}</span>
+            </div>
+            <span class="badge ${cls.badgeClass}">${cls.category}</span>
+        </div>
+        <div style="padding:16px;">
+            <div style="margin-bottom:12px;">
+                <h4 style="font-size:14px; color:#fff; margin-bottom:2px;">${escapeHtml(ev.event_type)}</h4>
+                <div style="font-size:11.5px; font-family:monospace; color:var(--text-dim);">${escapeHtml(ev.timestamp || 'Timestamp unavailable')}</div>
+            </div>
+
+            <div class="inspector-meta-grid">
+                <div>
+                    <span style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">Source IP</span>
+                    <div style="font-family:monospace; font-size:12px; margin-top:2px;">
+                        <code>${escapeHtml(ev.source_ip || 'N/A')}</code>
+                        ${ipClass ? ipClass.badge : ''}
+                    </div>
+                </div>
+                <div>
+                    <span style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">User / Host</span>
+                    <div style="font-family:monospace; font-size:12px; margin-top:2px;">
+                        <code>${escapeHtml(ev.username || 'N/A')}</code>
+                    </div>
+                </div>
+                <div>
+                    <span style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">Severity</span>
+                    <div style="margin-top:2px;">
+                        <span class="badge badge-${(ev.severity || 'LOW').toLowerCase()}">${ev.severity || 'LOW'}</span>
+                    </div>
+                </div>
+                <div>
+                    <span style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">Detection Rule Match</span>
+                    <div style="margin-top:2px;">
+                        ${matchedRulesHtml || '<span style="color:var(--text-muted); font-size:12px;">None (Baseline)</span>'}
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Forensic Assessment:</span>
+                <div style="font-size:12.5px; color:#e2e8f0; background:rgba(2,132,199,0.08); border-left:3px solid var(--accent-cyan); padding:8px 12px; border-radius:4px; margin-top:4px;">
+                    ${assessment}
+                </div>
+            </div>
+
+            <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                    <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Raw Telemetry Evidence:</span>
+                    <button class="btn btn-secondary btn-sm" onclick="copyRawLogPayload('timeline-raw-log-${idx}')">&#128203; Copy Raw Log</button>
+                </div>
+                <div class="raw-log-container">
+                    <pre id="timeline-raw-log-${idx}" class="raw-log-text">${escapeHtml(ev.raw_log || ev.message || 'No raw log line captured.')}</pre>
+                </div>
+            </div>
+
+            <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border-color);">
+                <span style="font-size:11px; font-weight:700; color:var(--accent-blue); text-transform:uppercase; letter-spacing:0.5px;">Analyst Action Advice:</span>
+                <div style="font-size:12px; color:var(--text-main); margin-top:4px;">
+                    ${action}
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 // ================= 8. Reports View =================

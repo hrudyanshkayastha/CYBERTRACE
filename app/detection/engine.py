@@ -46,4 +46,9 @@ class DetectionEngine:
                     elif match.severity == "MEDIUM" and curr_sev in ("LOW", "INFO"):
                         events[idx]["severity"] = "MEDIUM"
 
+                    extra = events[idx].setdefault("extra_data", {})
+                    matched_list = extra.setdefault("matched_rules", [])
+                    if match.rule_id not in matched_list:
+                        matched_list.append(match.rule_id)
+
         return all_matches

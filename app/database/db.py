@@ -261,7 +261,12 @@ def get_incident_by_id(incident_id: int, db_path: Optional[Path] = None) -> Opti
         WHERE ie.incident_id = ?
         ORDER BY e.timestamp ASC, e.event_index ASC
     """, (incident_id,)).fetchall()
-    inc["timeline"] = [dict(ev) for ev in ev_rows]
+    results = []
+    for ev in ev_rows:
+        d = dict(ev)
+        d["extra_data"] = json.loads(d.get("extra_json") or "{}")
+        results.append(d)
+    inc["timeline"] = results
     conn.close()
     return inc
 
