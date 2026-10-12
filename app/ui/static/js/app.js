@@ -9,9 +9,14 @@ const state = {
     currentRunId: null,
     currentRunMeta: null,
     activeTab: 'dashboard',
+    cachedIncidents: [],
     eventsFilter: {
         severity: '',
         eventType: '',
+        search: ''
+    },
+    incidentsFilter: {
+        severity: '',
         search: ''
     }
 };
@@ -22,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initUploadHandlers();
     loadSamplesList();
     loadInitialState();
+    checkSystemHealth();
 });
 
 // ================= Navigation & Routing =================
@@ -58,9 +64,52 @@ function switchTab(tabId) {
     if (tabId === 'reports') loadReportsView();
 }
 
+// ================= System Health Check =================
+async function checkSystemHealth() {
+    try {
+        const res = await fetch('/api/health');
+        if (!res.ok) throw new Error('Health check non-200');
+        const data = await res.json();
+        const backendBadge = document.getElementById('health-backend-badge');
+        const dbBadge = document.getElementById('health-db-badge');
+
+        if (backendBadge) {
+            if (data.status === 'healthy') {
+                backendBadge.className = 'health-pill online';
+                backendBadge.innerHTML = '<span class="status-dot"></span> Backend: ONLINE';
+            } else {
+                backendBadge.className = 'health-pill degraded';
+                backendBadge.innerHTML = '<span class="status-dot"></span> Backend: DEGRADED';
+            }
+        }
+
+        if (dbBadge) {
+            if (data.database === 'healthy') {
+                dbBadge.className = 'health-pill online';
+                dbBadge.innerHTML = '<span class="status-dot"></span> SQLite: ONLINE';
+            } else {
+                dbBadge.className = 'health-pill degraded';
+                dbBadge.innerHTML = '<span class="status-dot"></span> SQLite: DEGRADED';
+            }
+        }
+    } catch (err) {
+        const backendBadge = document.getElementById('health-backend-badge');
+        const dbBadge = document.getElementById('health-db-badge');
+        if (backendBadge) {
+            backendBadge.className = 'health-pill offline';
+            backendBadge.innerHTML = '<span class="status-dot"></span> Backend: OFFLINE';
+        }
+        if (dbBadge) {
+            dbBadge.className = 'health-pill offline';
+            dbBadge.innerHTML = '<span class="status-dot"></span> SQLite: OFFLINE';
+        }
+    }
+}
+
 // ================= Initial State Loader =================
 async function loadInitialState() {
     try {
+        await checkSystemHealth();
         const res = await fetch('/api/runs');
         const runs = await res.json();
         if (runs && runs.length > 0) {
@@ -118,17 +167,171 @@ async function loadDashboard() {
         document.getElementById('stat-unique-ips').textContent = stats.unique_ips || 0;
         document.getElementById('stat-observed-iocs').textContent = stats.total_iocs || 0;
 
-        // Load preview incidents on dashboard
+        let incidents = [];
+        let events = [];
         if (state.currentRunId) {
             const incRes = await fetch(`/api/incidents?run_id=${state.currentRunId}`);
-            const incidents = await incRes.json();
+            incidents = await incRes.json();
+            const evRes = await fetch(`/api/events?run_id=${state.currentRunId}&limit=100`);
+            const evData = await evRes.json();
+            events = evData.events || [];
             renderDashboardIncidents(incidents);
         } else {
             renderDashboardIncidents([]);
         }
+
+        renderVisualAnalytics(stats, events, incidents);
     } catch (err) {
         console.error('Failed to load dashboard:', err);
     }
+}
+
+function renderVisualAnalytics(stats, events, incidents) {
+    renderSeverityDonut(incidents);
+    renderEventTypeBars(stats, events);
+}
+
+function renderSeverityDonut(incidents) {
+    const container = document.getElementById('chart-severity-container');
+    const summaryLabel = document.getElementById('chart-sev-summary');
+    if (!container) return;
+
+    const total = incidents ? incidents.length : 0;
+    if (summaryLabel) {
+        summaryLabel.textContent = `${total} Active Incident${total === 1 ? '' : 's'}`;
+    }
+
+    if (total === 0) {
+        container.innerHTML = `
+            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:18px;">
+                <svg width="56" height="56" viewBox="0 0 56 56" fill="none" style="margin-bottom:8px;">
+                    <circle cx="28" cy="28" r="24" stroke="rgba(16, 185, 129, 0.3)" stroke-width="3" stroke-dasharray="4 4" />
+                    <path d="M19 28L25 34L37 22" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <div style="font-size:13px; font-weight:600; color:#34d399;">Clean Baseline</div>
+                <div style="font-size:11.5px; color:var(--text-dim); margin-top:2px;">No active incident alerts detected</div>
+            </div>
+        `;
+        return;
+    }
+
+    const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+    incidents.forEach(inc => {
+        const lvl = (inc.risk_level || 'LOW').toUpperCase();
+        if (counts[lvl] !== undefined) counts[lvl]++;
+        else counts[lvl] = 1;
+    });
+
+    const colors = {
+        CRITICAL: '#ef4444',
+        HIGH: '#f97316',
+        MEDIUM: '#fbbf24',
+        LOW: '#10b981'
+    };
+
+    const radius = 38;
+    const circ = 2 * Math.PI * radius;
+    let accumulatedOffset = 0;
+    const segments = [];
+
+    ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].forEach(key => {
+        const count = counts[key] || 0;
+        if (count > 0) {
+            const fraction = count / total;
+            const strokeDasharray = `${fraction * circ} ${circ}`;
+            const strokeDashoffset = -accumulatedOffset;
+            accumulatedOffset += fraction * circ;
+            segments.push(`
+                <circle cx="60" cy="60" r="${radius}" fill="none"
+                    stroke="${colors[key]}" stroke-width="14"
+                    stroke-dasharray="${strokeDasharray}"
+                    stroke-dashoffset="${strokeDashoffset}"
+                    transform="rotate(-90 60 60)" />
+            `);
+        }
+    });
+
+    const legendItems = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map(key => {
+        const count = counts[key] || 0;
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        return `
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; margin-bottom:5px;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="width:8px; height:8px; border-radius:50%; background:${colors[key]}; display:inline-block;"></span>
+                    <span style="color:var(--text-muted); font-weight:500;">${key}</span>
+                </div>
+                <div style="font-weight:600; color:var(--text-main);">
+                    ${count} <span style="font-size:11px; color:var(--text-dim); font-weight:normal;">(${pct}%)</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:space-around; width:100%; gap:16px;">
+            <div style="position:relative; width:120px; height:120px; flex-shrink:0;">
+                <svg width="120" height="120" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r="${radius}" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="14" />
+                    ${segments.join('')}
+                </svg>
+                <div style="position:absolute; top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none;">
+                    <span style="font-size:22px; font-weight:800; color:#fff; line-height:1;">${total}</span>
+                    <span style="font-size:9.5px; text-transform:uppercase; color:var(--text-dim); letter-spacing:0.5px; margin-top:2px;">TOTAL</span>
+                </div>
+            </div>
+            <div style="flex:1; max-width:200px;">
+                ${legendItems}
+            </div>
+        </div>
+    `;
+}
+
+function renderEventTypeBars(stats, events) {
+    const container = document.getElementById('chart-events-container');
+    const summaryLabel = document.getElementById('chart-events-summary');
+    if (!container) return;
+
+    if (!events || events.length === 0) {
+        if (summaryLabel) summaryLabel.textContent = '0 Ingested Events';
+        container.innerHTML = `
+            <div class="chart-empty-state">No event telemetry loaded</div>
+        `;
+        return;
+    }
+
+    if (summaryLabel) {
+        summaryLabel.textContent = `${stats.total_events || events.length} Ingested Events`;
+    }
+
+    const counts = {};
+    events.forEach(e => {
+        const t = e.event_type || 'OTHER';
+        counts[t] = (counts[t] || 0) + 1;
+    });
+
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const maxVal = Math.max(...sorted.map(s => s[1]), 1);
+
+    const barsHtml = sorted.map(([type, count]) => {
+        const pct = Math.round((count / maxVal) * 100);
+        return `
+            <div style="margin-bottom:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px; margin-bottom:3px;">
+                    <span style="font-family:monospace; color:var(--accent-cyan); font-weight:500;">${escapeHtml(type)}</span>
+                    <span style="color:var(--text-main); font-weight:600;">${count}</span>
+                </div>
+                <div style="height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;">
+                    <div style="width:${pct}%; height:100%; background:linear-gradient(90deg, #0284c7, #38bdf8); border-radius:3px; transition:width 0.3s ease;"></div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div style="width:100%; padding:0 8px;">
+            ${barsHtml}
+        </div>
+    `;
 }
 
 function renderDashboardIncidents(incidents) {
@@ -335,64 +538,103 @@ async function loadIncidents() {
     try {
         const res = await fetch(`/api/incidents?run_id=${state.currentRunId}`);
         const incidents = await res.json();
-        const container = document.getElementById('incidents-container');
-
-        if (!incidents || incidents.length === 0) {
-            container.innerHTML = `
-                <div class="card" style="padding:30px; text-align:center; color:var(--text-muted);">
-                    <h3>No Security Incidents Detected</h3>
-                    <p>The events in this log run did not trigger any correlated attack chains or rule thresholds.</p>
-                </div>
-            `;
-            return;
-        }
-
-        let html = '';
-        incidents.forEach(inc => {
-            const sevClass = inc.risk_level.toLowerCase();
-            const rulesTags = (inc.rules_triggered || []).map(r => `<span class="badge badge-tag">${r}</span>`).join(' ');
-            
-            html += `
-                <div class="card" style="margin-bottom:20px;">
-                    <div class="card-header">
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <span class="badge badge-tag" style="font-size:12px;">${inc.incident_code}</span>
-                            <span class="card-title">${escapeHtml(inc.title)}</span>
-                        </div>
-                        <span class="badge badge-${sevClass}">${inc.risk_level} (${inc.risk_score}/100)</span>
-                    </div>
-                    <div class="card-body">
-                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px; font-size:13px; margin-bottom:14px; background:var(--bg-sidebar); padding:12px; border-radius:6px;">
-                            <div><strong>Source IP:</strong> <code>${inc.source_ip || 'N/A'}</code></div>
-                            <div><strong>Username:</strong> <code>${inc.username || 'N/A'}</code></div>
-                            <div><strong>First Observed:</strong> <code>${inc.first_observed || 'N/A'}</code></div>
-                            <div><strong>Last Observed:</strong> <code>${inc.last_observed || 'N/A'}</code></div>
-                        </div>
-
-                        <div style="margin-bottom:14px;">
-                            <strong style="font-size:13px;">Attack Pattern Progression:</strong>
-                            <div class="attack-chain-banner">
-                                ${escapeHtml(inc.attack_pattern)}
-                            </div>
-                        </div>
-
-                        <div style="margin-bottom:16px;">
-                            <strong style="font-size:13px;">Triggered Rules:</strong><br/>
-                            <div style="margin-top:6px;">${rulesTags || '<em>None</em>'}</div>
-                        </div>
-
-                        <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:14px;">
-                            <span style="font-size:12px; color:var(--text-muted);">${inc.event_count} correlated security events</span>
-                            <button class="btn btn-primary" onclick="openIncidentModal(${inc.id})">Investigate Incident Details</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-        container.innerHTML = html;
+        state.cachedIncidents = incidents || [];
+        applyIncidentsFilter();
     } catch (err) {
         console.error('Error loading incidents:', err);
     }
+}
+
+function applyIncidentsFilter() {
+    const searchInput = document.getElementById('incident-search-input');
+    const sevSelect = document.getElementById('incident-severity-select');
+    const search = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    const severity = sevSelect ? sevSelect.value.toUpperCase() : '';
+
+    const all = state.cachedIncidents || [];
+    let filtered = all.filter(inc => {
+        if (severity && (inc.risk_level || '').toUpperCase() !== severity) return false;
+        if (search) {
+            const combined = `${inc.incident_code || ''} ${inc.title || ''} ${inc.source_ip || ''} ${inc.username || ''} ${inc.attack_pattern || ''}`.toLowerCase();
+            if (!combined.includes(search)) return false;
+        }
+        return true;
+    });
+
+    const countLabel = document.getElementById('incidents-count-label');
+    if (countLabel) {
+        countLabel.textContent = `Showing ${filtered.length} of ${all.length} incidents`;
+    }
+
+    renderIncidentsList(filtered, all.length);
+}
+
+function renderIncidentsList(incidents, totalAvailable) {
+    const container = document.getElementById('incidents-container');
+    if (!container) return;
+
+    if (totalAvailable === 0) {
+        container.innerHTML = `
+            <div class="card" style="padding:30px; text-align:center; color:var(--text-muted);">
+                <h3>No Security Incidents Detected</h3>
+                <p>The events in this log run did not trigger any correlated attack chains or rule thresholds.</p>
+            </div>
+        `;
+        return;
+    }
+
+    if (!incidents || incidents.length === 0) {
+        container.innerHTML = `
+            <div class="card" style="padding:24px; text-align:center; color:var(--text-muted);">
+                <p>No incidents match the selected filter criteria.</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    incidents.forEach(inc => {
+        const sevClass = inc.risk_level.toLowerCase();
+        const rulesTags = (inc.rules_triggered || []).map(r => `<span class="badge badge-tag">${r}</span>`).join(' ');
+
+        html += `
+            <div class="card" style="margin-bottom:20px;">
+                <div class="card-header">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span class="badge badge-tag" style="font-size:12px;">${inc.incident_code}</span>
+                        <span class="card-title">${escapeHtml(inc.title)}</span>
+                    </div>
+                    <span class="badge badge-${sevClass}">${inc.risk_level} (${inc.risk_score}/100)</span>
+                </div>
+                <div class="card-body">
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px; font-size:13px; margin-bottom:14px; background:var(--bg-sidebar); padding:12px; border-radius:6px;">
+                        <div><strong>Source IP:</strong> <code>${inc.source_ip || 'N/A'}</code></div>
+                        <div><strong>Username:</strong> <code>${inc.username || 'N/A'}</code></div>
+                        <div><strong>First Observed:</strong> <code>${inc.first_observed || 'N/A'}</code></div>
+                        <div><strong>Last Observed:</strong> <code>${inc.last_observed || 'N/A'}</code></div>
+                    </div>
+
+                    <div style="margin-bottom:14px;">
+                        <strong style="font-size:13px;">Attack Pattern Progression:</strong>
+                        <div class="attack-chain-banner">
+                            ${escapeHtml(inc.attack_pattern)}
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom:16px;">
+                        <strong style="font-size:13px;">Triggered Rules:</strong><br/>
+                        <div style="margin-top:6px;">${rulesTags || '<em>None</em>'}</div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:14px;">
+                        <span style="font-size:12px; color:var(--text-muted);">${inc.event_count} correlated security events</span>
+                        <button class="btn btn-primary" onclick="openIncidentModal(${inc.id})">Investigate Incident Details</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
 }
 
 // ================= 5. Incident Details Modal =================
@@ -414,11 +656,11 @@ async function openIncidentModal(incidentId) {
         (inc.timeline || []).forEach(ev => {
             timelineRows += `
                 <tr>
-                    <td><code>${ev.timestamp || 'N/A'}</code></td>
-                    <td><strong>${ev.event_type}</strong></td>
-                    <td><code>${ev.source_ip || '-'}</code></td>
-                    <td><code>${ev.username || '-'}</code></td>
-                    <td>${escapeHtml(ev.message)}</td>
+                    <td style="white-space:nowrap;"><code style="white-space:nowrap;">${ev.timestamp || 'N/A'}</code></td>
+                    <td style="white-space:nowrap;"><span class="badge badge-tag">${ev.event_type}</span></td>
+                    <td style="white-space:nowrap;"><code>${ev.source_ip || '-'}</code></td>
+                    <td style="white-space:nowrap;"><code>${ev.username || '-'}</code></td>
+                    <td style="word-break:break-word;">${escapeHtml(ev.message)}</td>
                 </tr>
             `;
         });
@@ -462,7 +704,13 @@ async function openIncidentModal(incidentId) {
                 <div class="table-wrapper">
                     <table class="soc-table">
                         <thead>
-                            <tr><th>Timestamp</th><th>Event Type</th><th>Source IP</th><th>User</th><th>Message</th></tr>
+                            <tr>
+                                <th style="white-space:nowrap; width:170px;">Timestamp</th>
+                                <th style="white-space:nowrap; width:160px;">Event Type</th>
+                                <th style="white-space:nowrap; width:130px;">Source IP</th>
+                                <th style="white-space:nowrap; width:100px;">User</th>
+                                <th>Message</th>
+                            </tr>
                         </thead>
                         <tbody>${timelineRows || '<tr><td colspan="5">No timeline events available.</td></tr>'}</tbody>
                     </table>

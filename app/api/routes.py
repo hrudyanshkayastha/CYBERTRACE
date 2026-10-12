@@ -82,11 +82,21 @@ def process_log_content(filename: str, content_str: str, file_size: int) -> Dict
 
 @router.get("/health")
 def get_health() -> Dict[str, Any]:
-    """Health check endpoint to verify backend service readiness."""
+    """Health check endpoint to verify backend service readiness and database connectivity."""
+    db_status = "healthy"
+    try:
+        from app.database.db import get_connection
+        conn = get_connection()
+        conn.execute("SELECT 1").fetchone()
+        conn.close()
+    except Exception:
+        db_status = "degraded"
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "healthy" else "degraded",
         "service": "CYBERTRACE Incident Detection Platform",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "database": db_status
     }
 
 @router.get("/samples")
