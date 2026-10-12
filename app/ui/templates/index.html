@@ -61,13 +61,13 @@
             </li>
             <li class="nav-item">
                 <a class="nav-link" data-tab="about">
-                    <span class="nav-icon">&#128218;</span> About & Viva Guide
+                    <span class="nav-icon">&#128737;</span> Architecture & Threat Model
                 </a>
             </li>
         </ul>
 
         <div class="sidebar-footer">
-            BSc Cybersecurity &bull; 3rd Year Project
+            CYBERTRACE v1.0.0 &bull; SOC Platform
         </div>
     </aside>
 
@@ -75,9 +75,18 @@
     <div class="main-wrapper">
         <!-- Top Sticky Header -->
         <header class="topbar">
-            <div class="active-run-indicator">
-                <span class="status-dot"></span>
-                <span>Active Target: <strong id="active-run-target" style="color:var(--accent-cyan);">None</strong></span>
+            <div class="topbar-left">
+                <div class="health-indicators">
+                    <span id="health-backend-badge" class="health-pill online" title="FastAPI Engine">
+                        <span class="status-dot"></span> Backend: ONLINE
+                    </span>
+                    <span id="health-db-badge" class="health-pill online" title="SQLite Database Layer">
+                        <span class="status-dot"></span> SQLite: ONLINE
+                    </span>
+                </div>
+                <div class="active-run-indicator">
+                    <span>Target: <strong id="active-run-target" style="color:var(--accent-cyan);">None</strong></span>
+                </div>
             </div>
             <div class="topbar-actions">
                 <button class="btn btn-primary btn-sm" onclick="switchTab('upload')">+ Ingest Logs</button>
@@ -86,11 +95,11 @@
 
         <!-- Dynamic Container Views -->
         <main class="content-container">
-            <!-- Academic Disclaimer -->
+            <!-- SOC Operational Notice -->
             <div class="disclaimer-banner">
-                <span>&#9888;</span>
+                <span class="disclaimer-icon">&#9888;</span>
                 <div>
-                    <strong>SOC Operational Notice:</strong> This system performs rule-based security event analysis. Detection results indicate potentially suspicious activity and do not prove malicious intent.
+                    <strong>SOC Operational Notice:</strong> Rule-based detection &amp; attack correlation platform. Flags anomalous patterns for analyst triage; forensic verification is required before confirming compromise.
                 </div>
             </div>
 
@@ -120,6 +129,32 @@
                     <div class="stat-box">
                         <div class="stat-header">Observed IOCs</div>
                         <div class="stat-value success" id="stat-observed-iocs">0</div>
+                    </div>
+                </div>
+
+                <!-- Visual Analytics Panels -->
+                <div class="analytics-grid">
+                    <div class="card analytics-card">
+                        <div class="card-header">
+                            <span class="card-title">&#9684; Incident Severity Distribution</span>
+                            <span class="analytics-badge" id="chart-sev-summary">0 Active Incidents</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="chart-severity-container" class="chart-container">
+                                <!-- Populated dynamically by JS -->
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card analytics-card">
+                        <div class="card-header">
+                            <span class="card-title">&#9643; Event Type Classification</span>
+                            <span class="analytics-badge" id="chart-events-summary">Top Ingested Events</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="chart-events-container" class="chart-container">
+                                <!-- Populated dynamically by JS -->
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -216,6 +251,24 @@
 
             <!-- ================= VIEW 4: INCIDENTS ================= -->
             <section id="view-incidents" class="page-view">
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <span class="card-title">&#9888; Security Incident Triage Queue</span>
+                        <span id="incidents-count-label" style="font-size:12px; color:var(--text-muted);">0 incidents</span>
+                    </div>
+                    <div class="card-body" style="padding:14px 20px;">
+                        <div class="filter-row" style="margin-bottom:0;">
+                            <input type="text" id="incident-search-input" class="input-search" placeholder="Filter by title, code, IP, or user..." oninput="applyIncidentsFilter()">
+                            <select id="incident-severity-select" class="select-filter" onchange="applyIncidentsFilter()">
+                                <option value="">All Severities</option>
+                                <option value="CRITICAL">Critical</option>
+                                <option value="HIGH">High</option>
+                                <option value="MEDIUM">Medium</option>
+                                <option value="LOW">Low</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
                 <div id="incidents-container">
                     <!-- Populated dynamically via JS -->
                 </div>
@@ -359,11 +412,11 @@
                 </div>
             </section>
 
-            <!-- ================= VIEW 9: ABOUT & VIVA GUIDE ================= -->
+            <!-- ================= VIEW 9: ABOUT & THREAT MODEL ================= -->
             <section id="view-about" class="page-view">
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title">&#128218; Project Architecture & Beginner Viva Guide</span>
+                        <span class="card-title">&#128737; Architecture & Threat Model Guide</span>
                     </div>
                     <div class="card-body">
                         <div style="margin-bottom:24px;">
@@ -373,7 +426,7 @@
                             </div>
                         </div>
 
-                        <h3 style="font-size:15px; margin-bottom:14px; color:var(--accent-cyan);">Essential Viva Questions & Answers:</h3>
+                        <h3 style="font-size:15px; margin-bottom:14px; color:var(--accent-cyan);">Architecture & Threat Modeling Principles:</h3>
 
                         <div class="viva-card">
                             <div class="viva-q">1. What is the fundamental difference between an Event and an Incident?</div>
@@ -392,7 +445,7 @@
                         <div class="viva-card">
                             <div class="viva-q">3. Why use deterministic rule-based detection instead of machine learning?</div>
                             <div class="viva-a">
-                                Deterministic rules provide <strong>100% explainability</strong>. In a Security Operations Center and academic viva, an analyst must explain exactly why an alert triggered. Black-box ML models produce false positives and lack explainability.
+                                Deterministic rules provide <strong>100% explainability</strong>. In a Security Operations Center, an analyst must explain exactly why an alert triggered. Black-box ML models produce unexplained false positives and lack forensic auditability.
                             </div>
                         </div>
 
