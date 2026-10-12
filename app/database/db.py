@@ -13,8 +13,8 @@ from app.config import DATABASE_PATH, DATA_DIR
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Returns a SQLite connection with dict-like row access."""
-    path = db_path or DATABASE_PATH
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = Path(db_path or DATABASE_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -261,7 +261,12 @@ def get_incident_by_id(incident_id: int, db_path: Optional[Path] = None) -> Opti
         WHERE ie.incident_id = ?
         ORDER BY e.timestamp ASC, e.event_index ASC
     """, (incident_id,)).fetchall()
-    inc["timeline"] = [dict(ev) for ev in ev_rows]
+    results = []
+    for ev in ev_rows:
+        d = dict(ev)
+        d["extra_data"] = json.loads(d.get("extra_json") or "{}")
+        results.append(d)
+    inc["timeline"] = results
     conn.close()
     return inc
 

@@ -6,6 +6,7 @@ observed IOCs, attack chains, and mandatory academic SOC disclaimers.
 """
 
 import json
+import html
 from datetime import datetime
 from typing import Dict, Any, List
 from app.config import SOC_DISCLAIMER
@@ -59,8 +60,11 @@ class ReportGenerator:
         iocs: List[Dict[str, Any]]
     ) -> str:
         """Renders an executive, self-contained HTML incident report."""
+        def _esc(val: Any) -> str:
+            return html.escape(str(val)) if val is not None else ""
+
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-        fn = run_data.get("filename", "Unknown")
+        fn = _esc(run_data.get("filename", "Unknown"))
         total_ev = run_data.get("total_events", len(events))
         susp_ev = run_data.get("suspicious_events", 0)
         tot_inc = run_data.get("total_incidents", len(incidents))
@@ -77,9 +81,9 @@ class ReportGenerator:
                 "LOW": "#10b981"
             }.get(r_level, "#64748b")
 
-            factors_li = "".join(f"<li><code>{f}</code></li>" for f in inc.get("contributing_factors", []))
-            recs_li = "".join(f"<li>{r}</li>" for r in inc.get("recommendations", []))
-            rules_li = "".join(f"<span class='badge-rule'>{rule}</span> " for rule in inc.get("rules_triggered", []))
+            factors_li = "".join(f"<li><code>{_esc(f)}</code></li>" for f in inc.get("contributing_factors", []))
+            recs_li = "".join(f"<li>{_esc(r)}</li>" for r in inc.get("recommendations", []))
+            rules_li = "".join(f"<span class='badge-rule'>{_esc(rule)}</span> " for rule in inc.get("rules_triggered", []))
 
             # Incident Timeline snippet
             inc_events = [e for e in inc.get("timeline", [])] if inc.get("timeline") else []
@@ -87,11 +91,11 @@ class ReportGenerator:
             for ev in inc_events[:10]:
                 timeline_rows += f"""
                 <tr>
-                    <td>{ev.get('timestamp') or 'N/A'}</td>
-                    <td><strong>{ev.get('event_type')}</strong></td>
-                    <td>{ev.get('source_ip') or '-'}</td>
-                    <td>{ev.get('username') or '-'}</td>
-                    <td>{ev.get('message')}</td>
+                    <td>{_esc(ev.get('timestamp') or 'N/A')}</td>
+                    <td><strong>{_esc(ev.get('event_type'))}</strong></td>
+                    <td>{_esc(ev.get('source_ip') or '-')}</td>
+                    <td>{_esc(ev.get('username') or '-')}</td>
+                    <td>{_esc(ev.get('message'))}</td>
                 </tr>
                 """
 
@@ -111,26 +115,26 @@ class ReportGenerator:
             <div class="incident-card" style="border-left: 5px solid {color_class};">
                 <div class="incident-header">
                     <div>
-                        <span class="incident-id">{inc.get('incident_code')}</span>
-                        <h3 style="display:inline; margin-left:10px;">{inc.get('title')}</h3>
+                        <span class="incident-id">{_esc(inc.get('incident_code'))}</span>
+                        <h3 style="display:inline; margin-left:10px;">{_esc(inc.get('title'))}</h3>
                     </div>
                     <div style="text-align:right;">
-                        <span class="risk-badge" style="background:{color_class};">{r_level} ({inc.get('risk_score')}/100)</span>
+                        <span class="risk-badge" style="background:{color_class};">{_esc(r_level)} ({inc.get('risk_score')}/100)</span>
                     </div>
                 </div>
 
                 <div class="incident-meta-grid">
-                    <div><strong>Source IP:</strong> {inc.get('source_ip') or 'N/A'}</div>
-                    <div><strong>Username:</strong> {inc.get('username') or 'N/A'}</div>
-                    <div><strong>First Seen:</strong> {inc.get('first_observed') or 'N/A'}</div>
-                    <div><strong>Last Seen:</strong> {inc.get('last_observed') or 'N/A'}</div>
-                    <div><strong>Related Events:</strong> {inc.get('event_count')}</div>
-                    <div><strong>Incident Type:</strong> <code>{inc.get('incident_type')}</code></div>
+                    <div><strong>Source IP:</strong> {_esc(inc.get('source_ip') or 'N/A')}</div>
+                    <div><strong>Username:</strong> {_esc(inc.get('username') or 'N/A')}</div>
+                    <div><strong>First Seen:</strong> {_esc(inc.get('first_observed') or 'N/A')}</div>
+                    <div><strong>Last Seen:</strong> {_esc(inc.get('last_observed') or 'N/A')}</div>
+                    <div><strong>Related Events:</strong> {inc.get('event_count', 0)}</div>
+                    <div><strong>Incident Type:</strong> <code>{_esc(inc.get('incident_type'))}</code></div>
                 </div>
 
                 <div style="margin-top:12px;">
                     <strong>Observed Attack Pattern:</strong>
-                    <div class="attack-pattern-box">{inc.get('attack_pattern')}</div>
+                    <div class="attack-pattern-box">{_esc(inc.get('attack_pattern'))}</div>
                 </div>
 
                 <div style="margin-top:12px;">
@@ -158,11 +162,11 @@ class ReportGenerator:
             susp_badge = "<span style='color:#ef4444;font-weight:bold;'>Suspicious</span>" if ioc.get("is_suspicious") else "<span style='color:#10b981;'>Observed</span>"
             ioc_rows += f"""
             <tr>
-                <td><span class="badge-type">{ioc.get('ioc_type')}</span></td>
-                <td><code>{ioc.get('ioc_value')}</code></td>
+                <td><span class="badge-type">{_esc(ioc.get('ioc_type'))}</span></td>
+                <td><code>{_esc(ioc.get('ioc_value'))}</code></td>
                 <td>{susp_badge}</td>
-                <td>{ioc.get('context')}</td>
-                <td>{ioc.get('first_seen') or 'N/A'}</td>
+                <td>{_esc(ioc.get('context'))}</td>
+                <td>{_esc(ioc.get('first_seen') or 'N/A')}</td>
             </tr>
             """
 
@@ -440,7 +444,7 @@ class ReportGenerator:
         </div>
 
         <div style="text-align:center; margin-top:30px; font-size:12px; color:var(--text-muted);">
-            Generated by CYBERTRACE &bull; Third-Year BSc Cybersecurity Project
+            Generated by CYBERTRACE &bull; Security Incident Detection Platform
         </div>
     </div>
 </body>
