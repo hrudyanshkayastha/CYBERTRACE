@@ -10,6 +10,7 @@ const state = {
     currentRunMeta: null,
     activeTab: 'dashboard',
     cachedIncidents: [],
+    isAnalyzing: false,
     eventsFilter: {
         severity: '',
         eventType: '',
@@ -36,6 +37,7 @@ const state = {
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initUploadHandlers();
+    initModalHandlers();
     loadSamplesList();
     loadInitialState();
     checkSystemHealth();
@@ -407,13 +409,20 @@ function initUploadHandlers() {
 
         fileInput.addEventListener('change', () => {
             if (fileInput.files.length > 0) {
-                handleFileUpload(fileInput.files[0]);
+                const file = fileInput.files[0];
+                fileInput.value = '';
+                handleFileUpload(file);
             }
         });
     }
 }
 
 async function handleFileUpload(file) {
+    if (state.isAnalyzing) {
+        showToast('Analysis already in progress, please wait...', 'info');
+        return;
+    }
+    state.isAnalyzing = true;
     const formData = new FormData();
     formData.append('file', file);
 
@@ -435,6 +444,8 @@ async function handleFileUpload(file) {
         switchTab('dashboard');
     } catch (err) {
         showToast(err.message, 'error');
+    } finally {
+        state.isAnalyzing = false;
     }
 }
 
@@ -468,6 +479,11 @@ async function loadSamplesList() {
 }
 
 async function runSampleAnalysis(sampleName) {
+    if (state.isAnalyzing) {
+        showToast('Analysis already in progress, please wait...', 'info');
+        return;
+    }
+    state.isAnalyzing = true;
     showToast(`Analyzing ${sampleName}...`, 'info');
     try {
         const res = await fetch(`/api/samples/analyze/${encodeURIComponent(sampleName)}`, {
@@ -485,6 +501,8 @@ async function runSampleAnalysis(sampleName) {
         switchTab('dashboard');
     } catch (err) {
         showToast(err.message, 'error');
+    } finally {
+        state.isAnalyzing = false;
     }
 }
 
@@ -755,15 +773,45 @@ function generateAnalystRecommendation(ev) {
     return 'Maintain baseline logging retention and correlate with adjacent network telemetry.';
 }
 
+function copyToClipboardSafe(text, successMsg) {
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast(successMsg, 'success');
+        }).catch(() => {
+            fallbackCopyText(text, successMsg);
+        });
+    } else {
+        fallbackCopyText(text, successMsg);
+    }
+}
+
+function fallbackCopyText(text, successMsg) {
+    try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) {
+            showToast(successMsg, 'success');
+        } else {
+            showToast('Unable to copy to clipboard', 'error');
+        }
+    } catch (err) {
+        showToast('Unable to copy to clipboard', 'error');
+    }
+}
+
 function copyRawLogPayload(elementId) {
     const el = document.getElementById(elementId);
     if (!el) return;
     const text = el.innerText || el.textContent;
-    navigator.clipboard.writeText(text).then(() => {
-        showToast('Raw evidence log copied to clipboard', 'success');
-    }).catch(() => {
-        showToast('Failed to copy to clipboard', 'error');
-    });
+    copyToClipboardSafe(text, 'Raw evidence log copied to clipboard');
 }
 
 // ================= 5. Incident Details Modal =================
@@ -978,7 +1026,24 @@ function renderModalEvidenceInspector(ev, idx) {
 }
 
 function closeIncidentModal() {
-    document.getElementById('incident-modal').classList.remove('active');
+    const modal = document.getElementById('incident-modal');
+    if (modal) modal.classList.remove('active');
+}
+
+function initModalHandlers() {
+    const modal = document.getElementById('incident-modal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeIncidentModal();
+            }
+        });
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeIncidentModal();
+        }
+    });
 }
 
 // ================= 6. IOC Findings View =================
@@ -1023,9 +1088,7 @@ async function loadIOCs() {
 }
 
 function copyText(text) {
-    navigator.clipboard.writeText(text).then(() => {
-        showToast(`Copied ${text} to clipboard`, 'success');
-    });
+    copyToClipboardSafe(text, `Copied ${text} to clipboard`);
 }
 
 // ================= 7. Interactive Attack Timeline View =================

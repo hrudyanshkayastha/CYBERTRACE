@@ -13,8 +13,8 @@ from app.config import DATABASE_PATH, DATA_DIR
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Returns a SQLite connection with dict-like row access."""
-    path = db_path or DATABASE_PATH
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = Path(db_path or DATABASE_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
